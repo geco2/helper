@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+###################################################
+# PKG 
+# 
+# Description:	Helper for linux package management systems
+#
+# Author:	Andreas Eisenreich <andi@nanuc.de>
+# Version:	1.1
+# History:
+#	10. Okt 2012	Initial version
+#	06. Feb 2014	Add BSD pkg support
+###################################################
+
+###################################################
+# GLOBAL CONFIGURATION
+SCRIPT="${0}"
+SCRIPT_NAME="$(basename "${SCRIPT}")"
+SCRIPT_SHORTNAME="${SCRIPT_NAME%.sh}"
+SCRIPT_DIR=$(cd $(dirname "${SCRIPT}");pwd; cd - >/dev/null)
+LOG_DIR="/var/log"
+LOG_FILE="${LOG_DIR}/${SCRIPT_SHORTNAME}.log"
+LOCK_FILE="/var/run/${SCRIPT_SHORTNAME}"
+LOGFILES_AGE_DAYS=14 #Keep the logs 14 days
+BASE_LIB="${SCRIPT_DIR}/base_lib.sh"
+PRINTHELP_OPTIONS=" "
+PACKAGE_BACKUP_FILE="/var/${SCRIPT_SHORTNAME}_backup.txt"
+
+###################################################
+# SOURSE BASELIB
+if [ -f ${BASE_LIB} ];then
+	. ${BASE_LIB}
+else
+	echo "ERROR: Not able to use the standard BASE libary [${BASE_LIB}]!"
+exit 1
+fi
+###################################################
+
+if [ $(id -u) -eq "0" ];then
+	SUDO=""
+else
+	SUDO="sudo"
+fi 
+
+if [ -x /usr/bin/yaourt ];then
+	PACMAN="yaourt"
+else
+	PACMAN="pacman"
+fi
+
+if [ $(type ip 2>/dev/null 1>&2; echo $?) -eq "0" ];then
+	IPv6=$(ip a | grep -qE 'inet6.*scope global')
+else
+	IPv6=$(ifconfig | grep inet6 | grep -i global)
+fi
+
+###################################################
+# FUNCTIONS
+function func_update_mirror
+{
+	if [ ${#MIRROR_LIST} -ne 0 ];then
+		func_msg LIST "Update mirror list"
+
+		FASTEST_MIRROR=$(curl -s "${MIRROR_LIST_URL}" | grep Server | head -2 | sed 's/^#//g')
+
+		${SUDO} echo "${FASTEST_MIRROR}" | ${SUDO} tee ${MIRROR_LIST} >/dev/null
+
+		FASTEST_MIRROR=$(echo "${FASTEST_MIRROR}" | cut -d "/" -f 3)
+
+		func_msg LIST "OK"
+		func_msg DEBUG "Use: ${FASTEST_MIRROR}"
+	fi
+}
+
+function func_bkp_pkg_list
+{
+	func_msg LIST "Backup current package List"
+	func_msg DEBUG "Store the latest list of explicit installed packages to ${PACKAGE_BACKUP_FILE}"
+	case $DISTRIBUTION in
+		ubuntu|debian)		dpkg -l ${PACKAGE_NAME} >${PACKAGE_BACKUP_FILE};RC=$?;
+					;;
+		fedora|opensuse|centos)	rpm -qa >${PACKAGE_BACKUP_FILE};RC=$?;
+					;;
+		archlinux)		${PACMAN} -Qeq >${PACKAGE_BACKUP_FILE};RC=$?;
+					;;
+		freebsd)		/usr/sbin/pkg info >${PACKAGE_BACKUP_FILE};RC=$?;
+					;;
+	esac
+	
+	if [ ${RC} -eq "0" ];then
+		func_msg LIST "OK"
+	else
+		func_msg LIST "ERROR"
+	fi
+}
+
+function get_dist ()
+{
+        FOUND=0
+	# Get Ubuntu
+	if [ -f /etc/lsb-release ] && [ ${FOUND} == 0 ];then
+		grep -q -e "DISTRIB_ID=Ubuntu" -e "DISTRIB_ID=LinuxMint" /etc/lsb-release
+		RC=$?
+		if [ ${RC} -eq "0" ]; then
+			echo "ubuntu"
+			FOUND=1
+		fi
+	fi
+	
+	# Debian
+	if [ -f /etc/debian_version ] && [ ${FOUND} == 0 ];then
+		echo "debian"
+		FOUND=1
+	fi
+
+	# FEDORA
+	if [ -f /etc/fedora-release ] && [ ${FOUND} == 0 ];then
+		echo "fedora"
+		FOUND=1
+	fi
+
+	# ArchLiux
+	if [ -f /usr/bin/${PACMAN} ] && [ ${FOUND} == 0 ];then
+		echo "archlinux"
+		FOUND=1
+	fi
+
+	# CentOS
+	if [ -f /etc/centos-release ] && [ ${FOUND} == 0 ];then
+		echo "centos"
+		FOUND=1
+	fi
+
+	# FreeBSD
+	UNAME=$(uname)
+	if [ ${UNAME} == "FreeBSD" ] && [ ${FOUND} == 0 ];then
+		echo "freebsd"
+		FOUND=1
+	fi 
+	
+	if [ ${FOUND} == 0 ];then
+            func_msg ERROR "Sorry, your distribution is not supported yet. Please feel free to add your lines and provide a patch or get in contact with me."
+            exit 1
+        fi
+}
+
+function func_check_online
+{
+	if [ ${#MIRROR_LIST_URL} -ne 0 ]; then
+		SERVER=$(echo ${MIRROR_LIST_URL} | cut -d "/" -f 3)
+	else
+		SERVER="www.google.de"
+	fi
+	curl http://${SERVER} 2>>/dev/null 1>&2
+	RC=$?
+	if [ ${RC} -ne "0" ];then
+		func_msg ERROR "Not able to reach the update server"
+		exit 1
+        else
+                func_msg DEBUG "Online check successfull against ${SERVER}"
+	fi
+}
+
+function func_list ()
+{
+	shift
+	PACKAGE_NAME="$*"
+	case $DISTRIBUTION in
+		ubuntu|debian)		dpkg -l ${PACKAGE_NAME};
+					;;
+		fedora|opensuse|centos)	rpm -qa | grep ${PACKAGE_NAME};
+					;;
+		archlinux)		${PACMAN} -Q ${PACKAGE_NAME};
+					;;
+		freebsd)		/usr/sbin/pkg info | grep ${PACKAGE_NAME};
+					;;
+	esac
+
+}
+
+function func_update ()
+{
+	shift
+        PACKAGE_NAME="$*"
+        func_msg DEBUG "Started func_update: Start the update procedure for distribution \"${DISTRIBUTION}\""
+	case $DISTRIBUTION in
+		ubuntu|debian)      func_msg LIST "Update Sources";
+                                    ${SUDO} aptitude update >/dev/null;
+                                    if [ ${RC} -eq "0" ];then
+                                        func_msg LIST "OK"
+                                    else
+                                        func_msg LIST "ERROR"
+                                    fi;
+                                    ${SUDO} aptitude upgrade;
+                                    ;;
+		fedora|centos)		${SUDO} yum update ${PACKAGE_NAME};
+				;;
+		opensuse)	${SUDO} zypper up ${PACKAGE_NAME};
+				;;
+		archlinux)	${SUDO} func_update_mirror; ${SUDO} ${PACMAN} -Syua;
+				;;
+		freebsd)	${SUDO} portsnap fetch update;
+				${SUDO} portmaster -dayH --no-confirm;
+				;;
+	esac
+}
+
+function func_install
+{
+	shift
+	PACKAGE_NAME="$*"
+	case $DISTRIBUTION in
+		ubuntu|debian)	${SUDO} aptitude install ${PACKAGE_NAME};
+				;;
+		fedora|centos)		${SUDO} yum install ${PACKAGE_NAME};
+				;;
+		opensuse)	${SUDO} zypper in ${PACKAGE_NAME};
+				;;
+		archlinux)	${SUDO} func_arch_update_mirror; ${SUDO} ${PACMAN} -S ${PACKAGE_NAME};
+				;;
+		freebsd)	RC=$(/usr/sbin/pkg info nano 2>/dev/null 1>&2; echo $?);
+				if [ ${RC} -eq "0" ];then
+					echo "${PACKAGE_NAME} is already installed."
+					exit 0
+				fi;
+				PACKAGE_COUNT=$(ls -1d /usr/ports/*/${PACKAGE_NAME} | wc -l);	
+				if [ ${PACKAGE_COUNT} -eq "1" ];then
+					cd /usr/ports/*/${PACKAGE_NAME}
+					${SUDO} make install clean
+				else
+					echo "More than one package found... Please choose yours."
+					ls -1d /usr/ports/*/${PACKAGE_NAME}
+				fi;
+                                ;;
+	esac
+}
+
+function func_cleanup_cache
+{
+	case ${DISTRIBUTION} in
+		freebsd)	portmaster --clean-distfiles;
+				;;
+		*)		if [ ${#CACHE_DIR} -ne 0 ];then
+					func_msg LIST "Cleanup package cache"
+					find ${CACHE_DIR} -not -mtime -7 | xargs rm 2>/dev/null 
+					func_msg LIST "OK"
+				fi;
+				;;
+	esac
+}
+
+function func_remove
+{
+	shift
+	PACKAGE_NAME="$*"
+	
+	case ${DISTRIBUTION} in
+		ubuntu|debian)		${SUDO} dpkg -r ${PACKAGE_NAME};
+					;;
+		fedora|opensuse|centos)	${SUDO} yum remove ${PACKAGE_NAME};
+					;;
+		archlinux)		${SUDO} ${PACMAN} -R ${PACKAGE_NAME};
+					;;
+		freebsd)        	RC=$(/usr/sbin/pkg info nano 2>/dev/null 1>&2; echo $?);
+                                	if [ ${RC} -eq "70" ];then
+                                        	echo "${PACKAGE_NAME} is not installed."
+                                        	exit 0
+                                	fi;
+					ORGIN=$(/usr/sbin/pkg info ${PACKAGE_NAME} | grep ^Origin | cut -d ":" -f 2 | sed 's/ //g');
+					cd /usr/ports/${ORGIN};
+					${SUDO} make deinstall;
+                                	;;
+	esac
+}
+
+function func_search
+{
+	shift
+	PACKAGE_NAME="$*"
+	case ${DISTRIBUTION} in
+		ubuntu|debian)	aptitude search ${PACKAGE_NAME};
+				;;
+		fedora|centos)		yum search ${PACKAGE_NAME};
+				;;
+		opensuse)	${SUDO} zypper se ${PACKAGE_NAME};
+				;;
+		archlinux)	${SUDO} ${PACMAN} -Ss ${PACKAGE_NAME};
+				RC=$?; if [ ${RC} -ne "0" ];then
+					echo "Unable to find package called ${PACKAGE_NAME}"
+					fi;
+				;;
+		freebsd)	ls -1d /usr/ports/*/${PACKAGE_NAME};
+				;;
+	esac
+}
+
+function func_cleanunused
+{
+	shift
+	PACKAGE_NAME="$*"
+	case ${DISTRIBUTION} in
+		ubuntu|debian)	${SUDO} apt-get autoremove;
+				;;
+		fedora|centos)		exit;
+				;;
+		opensuse)	exit;
+				;;
+		archlinux)	${SUDO} pacman -Rns $(pacman -Qqtd);
+				;;
+	esac
+}
+
+function func_help
+{
+cat <<EOF
+$0 is a simple wrapper for Linux package manager solutions used
+in different distributions.
+
+	install			| -i | i	install a package
+	search			| -s | s 	search a package
+	remove			| -r | r	remove a package
+	update  		| -u | u	update the system
+	local   		| -l | l	list/search a installed package
+	clean-unused	| -c | c	remove unused packages
+EOF
+}
+
+###################################################
+# MAIN
+func_checklog
+
+DISTRIBUTION=$(get_dist)
+
+case ${DISTRIBUTION} in
+	archlinux)		MIRROR_LIST="/etc/pacman.d/mirrorlist";
+					PACKAGE_BACKUP_FILE="/usr/local/dlog/package_list.txt";
+					CACHE_DIR="/var/cache/pacman/pkg";
+					if [ ${#IPv6} -ne 0 ];then
+						MIRROR_LIST_URL='https://www.archlinux.org/mirrorlist/?country=DE&amp;protocol=http&amp;ip_version=6'
+					else
+						MIRROR_LIST_URL='https://www.archlinux.org/mirrorlist/?country=DE&amp;protocol=http&amp;ip_version=4'
+					fi;
+					;;
+esac
+
+
+case $1 in
+	update|-u|u)		func_check_online;
+#						func_bkp_pkg_list;
+						func_update;
+						;;
+	install|-i|i)		func_check_online;
+						func_update_mirror;
+						func_install $*;
+						;;
+	search|-s|s)		func_check_online;
+						func_search $*;
+						;;
+	remove|-r|r)		func_remove $*;
+						;;
+	local|list|-l|l)	func_list $*;
+						;;
+	clean-unused|-c|c)	func_cleanunused $*;
+						;;
+	*)					func_help;
+						exit 0;
+						;;
+esac
