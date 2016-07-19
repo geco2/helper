@@ -42,17 +42,6 @@ archive.sh
 -----------
 Used to OCR scan all pictures in a directory and generate *.txt files with there written content where ever missing. Useless on its own but can be combined later on ;-)
 
-pgp
------------
-Helper/Cheat for using gpg
-
-*Usage:*
-	*-s <FILE>	Sign a file*
-	*-e <FILE>	Encrypt a file*
-	*-d <FILE>	Decript a file*
-	*-c <FILE>	Check a signed file*
-
-*-s create a seperate signature file called <FILE>.asc*
 
 dba.sh (Docker Binary assistant)
 -----------
