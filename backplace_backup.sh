@@ -7,9 +7,16 @@ PGP_KEY="F32BBEE6"
 
 ID=${RANDOM}
 DATE=$(date '+%Y%m%d')
-TEMPDIR="${TEMPDIR}/${DATE}"
+if [ ! -d ${TEMPDIR}/* ];then
+    TEMPDIR="${TEMPDIR}/${DATE}"
+else
+    TEMPDIR="${TEMPDIR}/$(ls -1 ${TEMPDIR} | tail -1)"
+    NUMBER_CHUNKS="$(ls -1 ${TEMPDIR}/chunk-* | wc -l | awk '{print $1}')"
+    echo "INFO: Old local backup found... start upload ${TEMPDIR} - (${NUMBER_CHUNKS} chuncks)"
+fi
 CHUNK_NAME="chunk-"
-MAX_UPLOAD_COUNT="10"
+MAX_UPLOAD_COUNT="999"
+#MAX_UPLOAD_COUNT="1"
 CONTENT_TYPE="application/octet-stream"
 AUTH_FILE="/root/.backplace_auth"
 
@@ -89,7 +96,7 @@ if [ ! ${BUCKETNAME} ] || [ ! ${ARCHIVE_NAME} ] || [ ! ${BACKUP} ];then
 fi
 
 ##################################################################
-# HOUSEKEEPING
+# ACCOUNT
 function func_authorize_account {
     func_msg DEBUG ":: Authorize Account: ${ACCOUNT_ID}"
 
@@ -112,6 +119,7 @@ function func_authorize_account {
 function func_housekeeping {
     func_msg DEBUG ":: Do housekeeping..."
     RETURN=$(rm -r ${TEMPDIR} 2>&1)
+    #RETURN=$(true)
     RC=$?                                                                                                                  
     if [ ${RC} != "0" ];then                                                                                               
             func_msg ERROR "Can't remove dir \"${TEMPDIR}\". (${RETURN})"                                             
@@ -142,8 +150,7 @@ function func_create_archive {
         RC=$?                                                                                                                 
         if [ ${RC} != "0" ];then                                                                                               
                 echo "ERROR: Can't create archive"
-                echo "ERROR: ${RESULT}"     
-                func_housekeeping                                        
+                echo "ERROR: ${RESULT}"                               
                 exit 1                                                                                                         
         fi
     else 
@@ -202,14 +209,23 @@ function func_hash {
     func_msg DEBUG ":: Create checksum for ${FILE_COUNT} files"
 
     while [ ${INDEX} -lt ${FILE_COUNT} ]; do
-        HASHES[${INDEX}]=$(openssl sha1 ${FILES[${INDEX}]} | awk '{print $2}')
-        RC=$?
-        if [ ${RC} != "0" ];then                                                                                               
-            echo "ERROR: Hash creation failed"
-            exit 1
+        if [ ! -f "${FILES[${INDEX}]}-hash" ];then
+            HASHES[${INDEX}]=$(openssl sha1 ${FILES[${INDEX}]} | awk '{print $2}')
+            RC=$?
+            if [ ${RC} != "0" ];then                                                                                               
+                echo "ERROR: Hash creation failed"
+                exit 1
+            else
+                    func_msg DEBUG "${FILES[${INDEX}]} - ${HASHES[${INDEX}]}"
+                    HASH_JSON="${HASH_JSON} \"${HASHES[${INDEX}]}\", "
+                    func_msg DEBUG "Write hash file (${FILES[${INDEX}]}-hash)"
+                    echo ${HASHES[${INDEX}]} > ${FILES[${INDEX}]}-hash                                                                                            
+            fi
         else
-                func_msg DEBUG "${FILES[${INDEX}]} - ${HASHES[${INDEX}]}"
-                HASH_JSON="${HASH_JSON} \"${HASHES[${INDEX}]}\", "                                                                                                     
+            func_msg DEBUG "Hash file found (${FILES[${INDEX}]}-hash)"
+            HASHES[${INDEX}]=$(cat ${FILES[${INDEX}]}-hash | tr -d '\n')
+            func_msg DEBUG "${FILES[${INDEX}]} - ${HASHES[${INDEX}]}"
+            HASH_JSON="${HASH_JSON} \"${HASHES[${INDEX}]}\", "
         fi
         INDEX=$(( ${INDEX} + 1 ))
     done
@@ -219,6 +235,7 @@ function func_hash {
 
 ##################################################################
 # CHECK B2 BUCKET
+# FIXIT b2 binary used
 function func_b2_check_bucket {
     RETURN=""
     func_msg DEBUG ":: Check Backplace B2 bucket ${BUCKETNAME}"
@@ -232,7 +249,6 @@ function func_b2_check_bucket {
                 if [ ${RC} != "0" ];then
                         func_msg ERROR "bucket creation failed"
                         func_msg ERROR "${RETURN}"
-                        func_housekeeping
                         exit 1
                 fi
             else
@@ -257,7 +273,6 @@ function func_crypt {
             if [ ${RC} != "0" ];then
                     func_msg ERROR "Crypto failed."
                     func_msg ERROR "${RETURN}"
-                    func_housekeeping
                     exit 1
             fi
         else
@@ -275,7 +290,7 @@ function func_b2_init_upload {
     CHUNKSIZE=$(ls -l ${DIRECTORY}${CHUNK_NAME}00 | awk '{print $5}')
 
     func_msg DEBUG ":: Create b2 multipart upload job"
-    #func_msg DEBUG "curl -s -H \"Authorization: ${ACCOUNT_AUTHORIZATION_TOKEN}\" -d \"`printf '{\"fileName\":\"%s\", \"bucketId\":\"%s\", \"contentType\":\"%s\"}' ${ARCHIVE_NAME} ${BUCKET_ID} ${CONTENT_TYPE}`\" \"${API_URL}/b2api/v1/b2_start_large_file\";\""
+    #func_msg DEBUG "curl -H \"Authorization: ${ACCOUNT_AUTHORIZATION_TOKEN}\" -d \"`printf '{\"fileName\":\"%s\", \"bucketId\":\"%s\", \"contentType\":\"%s\"}' ${ARCHIVE_NAME} ${BUCKET_ID} ${CONTENT_TYPE}`\" \"${API_URL}/b2api/v1/b2_start_large_file\";\""
     if [ ${DRYRUN} -eq 0 ];then
         RETURN=$(curl -s -H "Authorization: ${ACCOUNT_AUTHORIZATION_TOKEN}" -d "`printf '{"fileName":"%s", "bucketId":"%s", "contentType":"%s"}' ${ARCHIVE_NAME} ${BUCKET_ID} ${CONTENT_TYPE}`" "${API_URL}/b2api/v1/b2_start_large_file" 2>&1)
         echo ${RETURN} | grep -q fileId
@@ -352,26 +367,26 @@ function func_b2_part_upload {
 
     for CHUNK in $(echo ${CHUNKS});do
         while [ ${COUNT} -le ${MAX_UPLOAD_COUNT} ]; do
-            func_msg DEBUG ":: Upload ${CHUNK}"
             ACT_SIZE=$(ls -l ${CHUNK} | awk '{print $5}')
             if [ ${DRYRUN} -eq 0 ];then
                 if [ ${SINGLE_UPLOAD} -eq 0 ];then
+                    func_msg DEBUG ":: Multipart upload ${CHUNK}"
                     #func_msg DEBUG "curl -s -H \"Authorization: ${UPLOAD_AUTHORIZATION_TOKEN}\" -H \"X-Bz-Part-Number: ${PART_NO}\" -H \"X-Bz-Content-Sha1: ${HASHES[$INDEX]}\" -H \"Content-Length: ${ACT_SIZE}\" --data-binary \"@${CHUNK}\" ${UPLOAD_URL}"
                     RETURN=$(curl -s -H "Authorization: ${UPLOAD_AUTHORIZATION_TOKEN}" -H "X-Bz-Part-Number: ${PART_NO}" -H "X-Bz-Content-Sha1: ${HASHES[$INDEX]}" -H "Content-Length: ${ACT_SIZE}" --data-binary "@${CHUNK}" ${UPLOAD_URL} 2>&1)
                 else
+                    func_msg DEBUG ":: Singlefile upload ${CHUNK}"
                     RETURN=$(curl -s -H "Authorization: ${UPLOAD_AUTHORIZATION_TOKEN}" -H "X-Bz-File-Name: ${ARCHIVE_NAME}" -H "X-Bz-Content-Sha1: ${HASHES[$INDEX]}" -H "Content-Type: ${CONTENT_TYPE}" -H "X-Bz-Info-Author: unknown" --data-binary "@${CHUNK}" ${UPLOAD_URL} 2>&1)
                 fi
-                echo ${RETURN} |grep -q contentSha1
+                echo ${RETURN} | grep -q contentSha1
                 RC=$?
                 if [ ${RC} -ne 0 ];then
                     func_msg DEBUG "${CHUNK} - ${COUNT}/${MAX_UPLOAD_COUNT}"
-                    func_msg DEBUG "${RETURN}"
+                    func_msg DEBUG "Return: ${RETURN}"
                     COUNT=$(( ${COUNT} + 1 ))
                     if [ ${COUNT} -eq ${MAX_UPLOAD_COUNT} ];then
                     	func_msg ERROR "Not able to upload all chunks."
-                        func_msg ERROR "${RETURN}"
+                        func_msg ERROR "Return: ${RETURN}"
                         func_abort_upload
-                     	func_housekeeping
                     	exit 1
     	            fi
                 else
@@ -387,6 +402,7 @@ function func_b2_part_upload {
         done
         PART_NO=$(( ${PART_NO} + 1 ))
         INDEX=$(( ${INDEX} + 1 ))
+        COUNT=0
     done
 }
 
@@ -448,7 +464,7 @@ function func_abort_upload {
 
 ##################################################################
 # MAIN
-trap abort_upload SIGINT SIGTERM
+trap func_abort_upload SIGINT SIGTERM
 
 ### Source credentials file ###
 if [ ! -f ${AUTH_FILE} ];then
@@ -464,12 +480,14 @@ else
 fi
 
 ### Local preperation ###
-func_create_tempdir
-func_create_archive "${BACKUP}"
-func_crypt ${TEMPDIR}/${ARCHIVE_NAME}_${DATE}.tgz2
+if [ ! -d ${TEMPDIR} ];then
+	func_create_tempdir
+	func_create_archive "${BACKUP}"
+	func_crypt ${TEMPDIR}/${ARCHIVE_NAME}_${DATE}.tgz2
 
-func_split ${TEMPDIR}/${ARCHIVE_NAME}_${DATE}.tgz2.gpg
-func_hash ${TEMPDIR}/${CHUNK_NAME}*
+	func_split ${TEMPDIR}/${ARCHIVE_NAME}_${DATE}.tgz2.gpg
+fi
+func_hash $(ls -1 ${TEMPDIR}/${CHUNK_NAME}* | grep -v "hash$")
 
 ### Upload ###
 func_authorize_account
@@ -477,11 +495,11 @@ func_b2_check_bucket
 if [ ${NUMBER_CHUNKS} -gt 1 ];then
     func_b2_init_upload ${TEMPDIR}/ ${BUCKET_ID}
     func_b2_get_upload_url ${FILE_ID}
-    func_b2_part_upload ${UPLOAD_URL} $(ls -1 ${TEMPDIR}/${CHUNK_NAME}*) 
+    func_b2_part_upload ${UPLOAD_URL} $(ls -1 ${TEMPDIR}/${CHUNK_NAME}??) 
     func_b2_close_upload ${FILE_ID}
 else
     func_b2_get_upload_url
-    func_b2_part_upload ${UPLOAD_URL} $(ls -1 ${TEMPDIR}/${CHUNK_NAME}*)
+    func_b2_part_upload ${UPLOAD_URL} $(ls -1 ${TEMPDIR}/${CHUNK_NAME}??)
 fi
 
 func_msg INFO "FileID: ${FILE_ID}"
