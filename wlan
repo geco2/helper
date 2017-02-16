@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+
+IFACE="wlan0"
+
+###########################
+# The following Configuration has to be done in each script that
+# Source the BASE library set:
+SCRIPT="${0}"
+SCRIPT_NAME="$(basename "${SCRIPT}")"
+SCRIPT_SHORTNAME="${SCRIPT_NAME%.sh}"
+LOG_DIR="/var/log" #Example directory: /var/log
+LOG_FILE="${LOG_DIR}/${SCRIPT_SHORTNAME}.log"
+LOCK_FILE="/var/run/${SCRIPT_SHORTNAME}" #Example: /var/run/${SCRIPT_SHORTNAME}
+LOGFILES_AGE_DAYS=14 #Keep the logs 14 days
+PRINTHELP_OPTIONS="f          force"
+##################################################################
+
+BASE_LIB="$(dirname $0})/base_lib.sh"
+if [ -f ${BASE_LIB} ];then
+      . ${BASE_LIB}
+else
+       echo "ERROR: Not able to use the standard BASE libary [${BASE_LIB}]!"
+       exit 1
+fi
+
+function func_wlanup ()
+{
+	WLAN_NAME="$1"
+	func_msg LIST "Connect to ${WLAN_NAME}"
+	RSTRING=$(sudo ifup ${IFACE}=${WLAN_NAME} 2>&1)
+	RC=$?
+	if [ ${RC} -ne 0 ];then
+		func_msg LIST ERROR "${RSTRING}"
+	else
+		func_msg LIST OK
+	fi	
+}
+
+##############################
+# MAIN
+
+func_checklog
+
+if [ -z "${DEBUG}" ]; then
+	DEBUG="0"
+fi
+
+##################################################################
+# Parse command line arguments
+while getopts dnh option
+do
+	case $option in
+		d)              DEBUG="1";;
+	esac
+done
+
+shift $(($OPTIND-1))
+
+
+STATUS=$(sudo iwconfig ${IFACE})
+NETWORK=$(echo "${STATUS}" | grep ESSID | awk '{print $NF}' | cut -d ":" -f 2)
+
+if [ ${NETWORK} == "off/any" ];then
+	func_msg LIST "Search for networks in range"
+	sudo ip link set ${IFACE} up
+	WLANS=($(sudo iwlist wlan0 scan | grep "ESSID:" | cut -d ":" -f 2 | sed 's/"//g' | tr ' ' ';' | sort -u))
+	   i=0
+	   KNOWN=0
+	   while [ ${i} -lt ${#WLANS[@]} ];do
+	   	TWLAN_NAME=$(echo ${WLANS[${i}]} | tr ' ' ';')
+		TWLAN_NAME=$(cat /etc/network/interfaces | grep -v "^#" | grep -v '^$' | tr '\n' ' ' | sed 's/iface/\niface/g' | grep ${TWLAN_NAME} | awk '{print $2}')
+		if [ ${#TWLAN_NAME} -gt 0 ];then
+			KNOWN=$(( ${KNOWN} + 1 ))
+			func_msg DEBUG "${WLANS[${i}]} - KNOWN(${KNOWN})"
+	   		WLANLIST=$(echo "${WLANLIST}";echo " $i - ${WLANS[${i}]} - KNOWN" | tr ';' ' ')
+			WLAN_NAME=${TWLAN_NAME}
+		else
+			func_msg DEBUG "${WLANS[${i}]}"
+	   		WLANLIST=$(echo "${WLANLIST}";echo " $i - ${WLANS[${i}]}" | tr ';' ' ')
+		fi
+		i=$(( ${i} + 1 ))
+	done
+	func_msg LIST OK
+	if [ ${KNOWN} -ne 1 ];then
+		echo "${WLANLIST}"
+		echo -en "\nChoose the WLAN(-number) to connect to: "
+		read DEST
+	
+		WLAN_NAME=$(cat /etc/network/interfaces | grep -v "^#" | grep -v '^$' | tr '\n' ' ' | sed 's/iface/\niface/g' | grep ${WLANS[${DEST}]} | awk '{print $2}')
+		if [ ${#WLAN_NAME} -eq 0 ];then
+			echo "No configuration found... please add the network to /etc/network/interfaces."
+			echo -n "Please provide the pw: "
+			read PW
+			NAME=$(echo ${WLANS[${DEST}]} | tr ' ' '_')
+	
+			CONFIG="	
+iface ${NAME} inet dhcp
+	wpa-ssid	$(echo \"${WLANS[${DEST}]}\" | tr ';' ' ')
+	wpa-psk		${PW}
+
+iface ${NAME} inet6 auto
+	privext 2
+"
+			echo "-----------------------"
+			echo "${CONFIG}"
+			echo "-----------------------"
+			echo "Do you want me to save the configuration? [y]"
+			read SAVE
+			if [ "${SAVE}" = y ];then
+				echo "${CONFIG}" | sudo tee -a /etc/network/interfaces >/dev/null
+				func_wlanup ${WLANS[${DEST}]}
+			fi
+		else
+			func_wlanup ${WLAN_NAME}
+		fi
+	else
+		func_wlanup ${WLAN_NAME}
+	fi
+else
+	echo "${STATUS}"
+	ip a s ${IFACE} | grep inet | awk '{print "\t" $2}'
+	echo -n "Disconect? [y]: "
+	read DC
+	echo $DC
+	if [ "${DC}" = y ];then
+		func_msg LIST "Disconnect"
+		RSTRING=$(sudo ifdown ${IFACE} 2>&1)
+		RC=$?
+		if [ ${RC} -ne 0 ];then
+			func_msg LIST ERROR "${RSTRING}"
+		else
+			func_msg LIST OK
+		fi	
+	fi
+fi    
