@@ -383,6 +383,7 @@ function func_b2_part_upload {
                 if [ ${RC} -ne 0 ];then
                     func_msg DEBUG "${CHUNK} - ${COUNT}/${MAX_UPLOAD_COUNT}"
                     func_msg DEBUG "Return: ${RETURN}"
+    func_b2_get_upload_url ${FILE_ID} ##
                     COUNT=$(( ${COUNT} + 1 ))
                     if [ ${COUNT} -eq ${MAX_UPLOAD_COUNT} ];then
                     	func_msg ERROR "Not able to upload all chunks."
