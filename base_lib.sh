@@ -96,7 +96,7 @@ function func_msg()
 {
         # Available msg types:
         # $1                                                            $2
-        # LIST                                                          OK,ERROR,FAILED,WARING,MSG_RESULT*,<MESSAGE>
+        # LIST                                                          OK,ERROR,FAILED,WARING,WORKING,MSG_RESULT*,<MESSAGE>
         # INFO,VINFO,ERROR,FAILED,WARING        <MESSAGE>
         # LOG                                                           <MESSAGE>
 
@@ -221,6 +221,9 @@ function func_msg()
                                         NA)                     echo -e "${MSG_DEL}[   N/A   ]"
                                                                         LISTMODE="closed"
                                                                         ;;
+					WORKING)	echo -e "${MSG_DEL}[ working ]"
+									LISTMODE="closed"
+									;;
                                         MSG_RESULT*)    NEW_MSG=$(echo ${MSG} |sed -e 's/MSG_RESULT //')
                                                                         MSG_SPACE=$(( 10 - $(echo ${NEW_MSG} |wc -c)))
                                                                         if (( "${MSG_SPACE}" < "0" ))
@@ -243,7 +246,7 @@ function func_msg()
                                                                         LISTMODE="closed"
                                                                         ;;
                                 esac
-                        elif [[ "${MSG}" != "OK" ]] && [[ "${MSG}" != "ERROR" ]] && [[ "${MSG}" != "FAILED" ]] && [[ "${MSG}" != "WARNING" ]]; then
+                        elif [[ "${MSG}" != "OK" ]] && [[ "${MSG}" != "ERROR" ]] && [[ "${MSG}" != "FAILED" ]] && [[ "${MSG}" != "WARNING" ]] && [[ "${MSG}" != "WORKING" ]]; then
                                 MSG_COUNT=`echo ${MSG} | wc -c`
                                 MSG_BCOUNT=$(( ${MSG_LISTWITH} - ${MSG_COUNT} - 1 ))
                                 while (( ${MSG_BCOUNT} < "1" ));do
