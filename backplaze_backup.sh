@@ -37,6 +37,7 @@ if [ -f ${BASE_LIB} ];then
 . ${BASE_LIB}
 else
 	echo "ERROR: Not able to use the standard BASE libary [${BASE_LIB}]!"
+    echo 'INFO: https://raw.githubusercontent.com/geco2/helper/master/base_lib.sh'
     exit 1
 fi
 
