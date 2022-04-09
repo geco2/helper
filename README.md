@@ -1,6 +1,11 @@
 helper
 ======
 
+to2tw.sh
+----------
+to2tw runs through markdown files prossibly created by obsidian or vi and extracts tasks to import them in taskwarrior with default tag #importedtw. It marks tasks done in md and add the new task with tag obsidian in tw - ready for review.
+Personally i use a cronjob every 15 min to migrate my tasks.
+
 snap_zfs.sh
 -----------
 snap_zfs create and roll over zfs snapshots. Please provide one directory stored on a zfs volume.
