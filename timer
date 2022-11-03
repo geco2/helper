@@ -1,0 +1,15 @@
+#!/bin/bash
+
+x=$1
+
+echo Timer $x Minutes
+while [ $x != "0" ]
+do
+    x=$(( $x - 1 ))
+    for (( s=59; s>=0; s-- ))
+    do
+        echo -en "\t$x : $s \r"
+        sleep 1
+    done
+done    
+echo -e "\t\rTIME OUT\t"

@@ -1,6 +1,15 @@
 helper
 ======
 
+timer
+----------
+A simple little timer. Simply call with the time in minutes to be counted down. K.I.S.S.
+
+*Usage: timer <minutes>*
+
+*Options:*
+    none
+
 to2tw.sh
 ----------
 to2tw runs through markdown files prossibly created by obsidian or vi and extracts tasks to import them in taskwarrior with default tag #importedtw. It marks tasks done in md and add the new task with tag obsidian in tw - ready for review.
