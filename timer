@@ -2,7 +2,8 @@
 
 x=$1
 
-echo Timer $x Minutes
+TIME="$(date)"
+echo -e "Timer $x Minutes\t(${TIME})"
 while [ $x != "0" ]
 do
     x=$(( $x - 1 ))
@@ -12,4 +13,6 @@ do
         sleep 1
     done
 done    
-echo -e "\t\rTIME OUT\t"
+TIME="$(date)"
+echo -e "\n\rTIME OUT\t(${TIME})"
+tput bel
