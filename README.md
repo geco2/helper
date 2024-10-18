@@ -78,3 +78,11 @@ Example usage:
         $0 -d archive 1388904647 /backup/Backup/1388904647/
 
 b2 credentials have to be configured for your user using b2 "authorize_account"
+
+pomodoro
+-----------
+Classic pomodoro timer for the command line including youtube fokus music during focus interval. No commandline arguments just KISS/as simple as possible
+
+Usage:
+    pomodoro
+
