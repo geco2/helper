@@ -1,5 +1,17 @@
 #!/bin/bash
 
+JOBID=""
+
+# MUSIC MODE
+if [ $1 == "m" ]
+then
+    $(dirname "$0")/lofi &
+    trap "pkill -P $! 2>/dev/null" EXIT
+    
+    shift
+fi
+
+# ACTUAL TIMER
 x=$1
 
 TIME="$(date)"
