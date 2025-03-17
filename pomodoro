@@ -2,7 +2,6 @@
 COUNT=0
 ############################################
 # CONFIGURATION
-MUSIC_LIB="/Users/a3018980/Music/my"
 WORKSESSIONTIME="25"
 PAUSETIME="5"
 BIGPAUSE="20"
@@ -14,16 +13,7 @@ while true;do
         echo -en "#############################################################\n"
         echo -en "                           WORK                              \n"
         echo -en "#############################################################\n"
-        mpv --no-video https://www.youtube.com/watch\?v\=jfKfPfyJRdk 2>/dev/null 1>&2 &
-        JOBID=$(jobs -l | tail -1 | awk '{print $2}')
-        RC=$?
-    
-        # Play local music if lofigirl on youtube is not available
-        if [ ${RC} != 0 ];then
-            mpv --length=1560 --shuffle ${MUSIC_LIB}/* 2>/dev/null 1>&2 &
-            JOBID=$(jobs -l | tail -1 | awk '{print $2}')
-        fi
-        timer ${WORKSESSIONTIME}
+        timer m ${WORKSESSIONTIME}
         kill -9 ${JOBID} 2>/dev/null 1>&2
     
         echo -en "#############################################################\n"

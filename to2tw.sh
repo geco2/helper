@@ -1,6 +1,6 @@
 #!/bin/bash
 
-OBSIDIANDIR="/Users/a3018980/Documents/obsidian/"
+OBSIDIANDIR="~/Documents/obsidian/"
 IFS=$'\n'
 
 MD_LIST=$(find ${OBSIDIANDIR} | grep .md$)
