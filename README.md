@@ -1,6 +1,15 @@
 helper
 ======
 
+timerlofi
+----------
+A low-fi streamer that is as simple as possible
+
+*Usage: lofi
+
+*Options:*
+    none
+
 timer
 ----------
 A simple little timer. Simply call with the time in minutes to be counted down. K.I.S.S.
