@@ -1,0 +1,26 @@
+#!/bin/bash
+#mpv --no-video "https://www.youtube.com/live/jfKfPfyJRdk?si=1rLajH-DC1-n3EKu"
+MUSIC_LIB="~/Music/"
+
+# https://www.radio-browser.info
+declare -a PLAYLIST
+#PLAYLIST=("http://stream.laut.fm/lofi") # Lauft fm (werbung)
+#PLAYLIST+=("http://thirtythree-45.com:8000") #The Augmented Ear - irgendwie kacke
+PLAYLIST+=("https://stream.zeno.fm/0r0xa792kwzuv") #Lofi Hip Hop Radio
+#PLAYLIST+=("https://streams.fluxfm.de/Chillhop/mp3-128/streams.fluxfm.de/") #Fluxfm - WERBUNG
+PLAYLIST+=("http://usa9.fastcast4u.com/proxy/jamz?mp=/1") # Lofi 24/7
+
+STREAMNR=$(( $RANDOM % ${#PLAYLIST[@]} ))
+
+echo "Play Stream ${STREAMNR}/${#PLAYLIST[@]}: ${PLAYLIST[$STREAMNR]}"
+if [ "${BASH_SOURCE[0]}" == "$0" ] && [ -n "$PS1" ] && [[ $- =~ i ]]; then
+    mpv --no-video "${PLAYLIST[$STREAMNR]}"
+    RC=$?
+else
+    mpv --no-video "${PLAYLIST[$STREAMNR]}" >/dev/null 2>&1
+    RC=$?
+fi
+
+if [ ${RC} != 0 ];then
+    mpv --length=1560 --shuffle ${MUSIC_LIB}/* 2>/dev/null 1>&2 &
+fi

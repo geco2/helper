@@ -5,10 +5,10 @@ timer
 ----------
 A simple little timer. Simply call with the time in minutes to be counted down. K.I.S.S.
 
-*Usage: timer <minutes>*
+*Usage: timer m <minutes>*
 
 *Options:*
-    none
+    m           Starts the lofi script for some chill beats during the timer
 
 to2tw.sh
 ----------
